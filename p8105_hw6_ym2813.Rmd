@@ -8,27 +8,33 @@ output: github_document
 ```{r, message = FALSE}
 library(tidyverse)
 library(modelr)
+
+knitr::opts_chunk$set(
+  fig.width = 6,
+  fig.asp = .6,
+  out.width = "90%"
+)
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+scale_colour_discrete = scale_color_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+
 ```
 
 
 ## Problem 1
 
-### Load and clean data
+**Load and clean data**
 
-```{r}
+```{r,message = FALSE}
 birth_weight = 
   read_csv("data/birthweight.csv")
 ```
 
-**Check for missing Value**
-```{r}
-sum(is.na(birth_weight))
-```
-
-This data has no missing values
-
-
-**Convert some variables to factors**
+First, convert appropriate variables to factors
 
 ```{r, message = FALSE}
 birth_weight =
@@ -40,4 +46,89 @@ birth_weight =
     malform = recode_factor(malform, "0" = "absent", "1" = "present" )
   )
 ```
+
+Summary of the data set before further analysis
+
+```{r}
+skimr::skim(birth_weight) %>% 
+  select(-c(factor.ordered, factor.n_unique, factor.top_counts,numeric.hist)) %>% 
+  knitr::kable()
+```
+
+As we can observe from the table, there's no missing value in the data set. Moreover, `pnumlbw` and `pnumgsa` are 0 for all of their observations, therefore those variables should be not used in the regression analysis. 
+
+**Hypothesized Regression Model**
+
+Hypothesize a model using the step-wise approach that we learned in Biostatistical Method I! 
+
+Here, I used the step-wise regression function in R. The process is to start with a model using all predictors and then use the backward elimination process to search through models from full to null to find the model with the smallest AIC value.
+
+
+```{r}
+mod_1 = lm(bwt ~ ., data = birth_weight) %>% 
+  step(direction = "backward", trace = 0)
+
+mod_1
+```
+
+So, the first model that I hypothesize with backward elimination include 11 variables. Those variables are `babysex`,`bhead`,`blength`,`delwt`,`fincome`, `gaweeks`,`mheight`, `mrace`, `parity`, `ppwt`, and `smoken`.
+
+```{r}
+summary(mod_1) %>% 
+  broom::tidy() %>% 
+  select(term, estimate, p.value) %>%
+  knitr::kable(digits = 3)
+```
+
+Plot of model residuals against fitted values
+
+```{r}
+birth_weight %>% 
+  add_predictions(mod_1) %>% 
+  add_residuals(mod_1) %>%
+  ggplot(aes(x = pred, y = resid)) +
+  geom_point(alpha = 0.5) + 
+  geom_smooth(se = FALSE) +
+  labs(x = "Fitted Values", y = "Residuals",title = "Residuals vs Fitted 1")
+```
+
+From the plot, we can see that most of the residuals bounce around 0 in the (-1000,1000) horizontal band. However, there are some concerning points at the lower end of the plot with high residuals. 
+
+**Compare models**
+
+```{r}
+mod_2 = lm(bwt ~ blength + gaweeks, data = birth_weight)
+mod_3 = lm(bwt ~ bhead + blength + babysex + 
+             bhead * blength + 
+             bhead * babysex + 
+             blength * babysex + 
+             bhead * blength * babysex, data = birth_weight)
+```
+
+Residual vs Fitted plot for the second model
+
+```{r}
+birth_weight %>% 
+  add_predictions(mod_2) %>% 
+  add_residuals(mod_2) %>%
+  ggplot(aes(x = pred, y = resid)) +
+  geom_point(alpha = 0.5) + 
+  geom_smooth(se = FALSE) +
+  labs(x = "Fitted Values", y = "Residuals",title = "Residuals vs Fitted 2")
+```
+
+Residual vs Fitted plot for the second model
+
+```{r}
+birth_weight %>% 
+  add_predictions(mod_3) %>% 
+  add_residuals(mod_3) %>%
+  ggplot(aes(x = pred, y = resid)) +
+  geom_point(alpha = 0.5) + 
+  geom_smooth(se = FALSE) +
+  labs(x = "Fitted Values", y = "Residuals",title = "Residuals vs Fitted 3")
+```
+
+Cross Validation
+
 
