@@ -131,7 +131,7 @@ birth_weight %>%
 
 **Cross Validation**
 
-```{r}
+```{r, message = FALSE}
 cv_df = crossv_mc(birth_weight, 100) 
 
 cv_df =
@@ -139,9 +139,7 @@ cv_df =
   mutate(
     train = map(train, as_tibble),
     test = map(test, as_tibble))
-```
 
-```{r}
 cv_df = 
   cv_df %>% 
   mutate(
@@ -170,3 +168,100 @@ cv_df %>%
 ```
 
 From the plot, we can see that the first model, the one I hypothesized using the step-wise regression in backward direction, has the smallest RMSE overall. Therefore, the first model is a better fit out of the three models. On the other hand, Model 2, the one with the main effects, has the highest RMSE, which means that it did not the best in fitting the data. 
+
+## Problem 2
+
+**Load the data**
+```{r, message = FALSE}
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2017-01-01",
+    date_max = "2017-12-31") %>%
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) %>%
+  select(name, id, everything())
+```
+
+**Boot Strap**
+
+Bootstrap and find the values of $\hat{r}^2$ and $log(\hat{\beta_{0}* \beta_{1}})$ for each strap. 
+
+```{r, message = FALSE}
+set.seed(1)
+
+boot_straps =
+  weather_df %>% 
+  modelr::bootstrap(n = 5000, id = "strap_id") %>% 
+  mutate(
+    strap = map(strap,as_tibble),
+    models = map(strap, ~lm(tmax ~ tmin, data = .x)),
+    results = map(models, broom::tidy),
+    summary = map(models, broom::glance)
+    ) %>% 
+  unnest(c(results,summary),names_repair = "universal")
+
+parameter_est = 
+  boot_straps %>% 
+  select(strap_id, term, estimate, r.squared) %>% 
+  pivot_wider(
+    names_from = "term",
+    values_from = "estimate"
+  ) %>% 
+  rename(
+    r_squared = r.squared,
+    b0 = `(Intercept)`,
+    b1 = tmin
+  ) %>% 
+  mutate(log_product = log(b0 * b1)) %>% 
+  select(-c(b0,b1))
+```
+
+**Plot the distribution of the interested quantities**
+
+1) $\hat{r}^2$ distribution plot
+
+```{r}
+parameter_est %>%
+  ggplot(aes(x = r_squared)) +
+  geom_density() +
+  labs(
+    title = "Distribution of R^2")
+```
+
+The $\hat{r}^2$ falls in the range between `r round(range(pull(parameter_est, r_squared)),3)`. From the plot, we can see that $\hat{r}^2$ is roughly normal distributed with a mean of `r round(mean(pull(parameter_est, r_squared)),3)`, and standard deviation `r round(sd(pull(parameter_est, r_squared)),3)`.
+
+
+2) $log(\hat{\beta}_0 * \hat{\beta}_1)$ distribution plot
+
+```{r}
+parameter_est %>%
+  ggplot(aes(x = log_product)) +
+  geom_density() +
+  labs(
+    x = "log(b0 * b1)",
+    title = "Distribution of log(b0 * b1)")
+```
+
+The $log(\hat{\beta}_0 * \hat{\beta}_1)$ falls in the range between `r round(range(pull(parameter_est, log_product)),3)`.From the plot, we can see that $log(\hat{\beta}_0 * \hat{\beta}_1)$ appears to be normally distributed with a mean of `r round(mean(pull(parameter_est, log_product)),3)` and standard deviation `r round(sd(pull(parameter_est, log_product)),3)`
+
+**95% confidence interval for the interested quantities**
+
+1) $\hat{r}^2$ 95% Confidence Interval
+
+```{r}
+quantile(pull(parameter_est, r_squared), probs = c(0.025,0.975))
+```
+
+The 95% confidence of $\hat{r}^2$ is (0.89,0.93)
+
+2) $log(\hat{\beta}_0 * \hat{\beta}_1)$ 95% Confidence Interval
+
+```{r}
+quantile(pull(parameter_est, log_product), probs = c(0.025,0.975))
+```
+
+The 95% confidence of $$log(\hat{\beta}_0 * \hat{\beta}_1)$$ is (1.96,2.06)
